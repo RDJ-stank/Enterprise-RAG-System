@@ -110,6 +110,16 @@ def delete_document(doc_id: str) -> bool:
         return False
 
 
+def delete_all_documents() -> dict | None:
+    try:
+        r = requests.delete(f"{API_BASE}/documents", timeout=30)
+        if r.status_code == 200:
+            return r.json()
+        return None
+    except Exception:
+        return None
+
+
 def has_any_indexed_doc() -> bool:
     """检查是否存在至少一份有效入库的文档（chunk_count > 0）。"""
     return any(d.get("chunk_count", 0) > 0 for d in st.session_state.documents)
@@ -149,8 +159,8 @@ with st.sidebar:
 
     # 动态 key：每次成功上传后 key 变化，强制 Streamlit 创建全新 widget
     uploaded = st.file_uploader(
-        "拖拽 PDF 或 TXT 文件到此处",
-        type=["pdf", "txt"],
+        "拖拽文件到此处（PDF / TXT / DOCX / CSV / XLSX）",
+        type=["pdf", "txt", "docx", "csv", "xlsx", "xls"],
         accept_multiple_files=False,
         key=f"file_uploader_{st.session_state.upload_counter}",
         label_visibility="collapsed",
@@ -188,12 +198,22 @@ with st.sidebar:
     st.divider()
 
     # ── Document list ────────────────────────────────────
-    col1, col2 = st.columns([3, 1])
+    col1, col2, col3 = st.columns([3, 1, 1])
     with col1:
         st.subheader("📚 已入库文档")
     with col2:
         if st.button("🔄", help="刷新文档列表", use_container_width=True):
             refresh_documents()
+    with col3:
+        if st.button("🗑️🗑️", help="一键删除所有文档", use_container_width=True):
+            if docs and st.session_state.backend_ok:
+                result = delete_all_documents()
+                if result:
+                    st.success(f"已删除 {result['documents_removed']} 个文档")
+                    refresh_documents()
+                    st.rerun()
+                else:
+                    st.error("清空失败，请查看后端日志")
 
     if ok:
         refresh_documents()

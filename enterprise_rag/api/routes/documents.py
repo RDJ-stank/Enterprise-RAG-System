@@ -3,7 +3,12 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from api.dependencies import get_vector_store
-from api.schemas import DeleteResponse, DocumentInfo, DocumentListResponse
+from api.schemas import (
+    DeleteAllResponse,
+    DeleteResponse,
+    DocumentInfo,
+    DocumentListResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +28,23 @@ async def list_documents():
     return DocumentListResponse(
         documents=[DocumentInfo(**d) for d in docs],
         total=len(docs),
+    )
+
+
+@router.delete("/documents", response_model=DeleteAllResponse)
+async def delete_all_documents():
+    """一键删除所有已入库文档及其向量数据。"""
+    vector_store = get_vector_store()
+    try:
+        result = vector_store.delete_all()
+    except RuntimeError as exc:
+        logger.exception("批量删除文档失败")
+        raise HTTPException(status_code=500, detail=f"数据库异常: {exc}") from exc
+
+    return DeleteAllResponse(
+        status="deleted",
+        documents_removed=result["documents_removed"],
+        chunks_removed=result["chunks_removed"],
     )
 
 

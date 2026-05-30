@@ -65,7 +65,7 @@ streamlit run streamlit_app.py --server.port 8501
 
 浏览器打开 **http://localhost:8501**
 
-1. 左侧上传 PDF 或 TXT 文档
+1. 左侧上传文档（支持 PDF / TXT / DOCX / CSV / XLSX / XLS）
 2. 等待解析入库（显示 `N 个文本块已入库`）
 3. 在聊天框输入问题，回车
 
@@ -133,7 +133,8 @@ enterprise_rag/
 | `POST` | `/upload` | 上传文档（multipart/form-data） |
 | `POST` | `/chat` | 知识库问答 |
 | `GET` | `/documents` | 文档列表 |
-| `DELETE` | `/documents/{id}` | 删除文档 |
+| `DELETE` | `/documents/{id}` | 删除指定文档 |
+| `DELETE` | `/documents` | 一键删除所有文档 |
 
 启动后端后访问 `http://localhost:8000/docs` 查看完整 API 文档（Swagger UI）。
 

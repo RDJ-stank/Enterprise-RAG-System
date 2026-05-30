@@ -55,6 +55,12 @@ class DeleteResponse(BaseModel):
     chunks_removed: int = Field(..., description="移除的向量条目数量")
 
 
+class DeleteAllResponse(BaseModel):
+    status: str = Field(..., description="操作状态: deleted")
+    documents_removed: int = Field(..., description="删除的文档数量")
+    chunks_removed: int = Field(..., description="移除的向量条目总数")
+
+
 # ── Error ───────────────────────────────────────────────────
 
 class ErrorResponse(BaseModel):

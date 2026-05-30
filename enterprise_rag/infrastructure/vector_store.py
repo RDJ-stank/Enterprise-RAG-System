@@ -168,6 +168,28 @@ class VectorStoreService:
             logger.exception("删除文档 %s 失败", doc_id)
             raise
 
+    def delete_all(self) -> dict:
+        """删除 Collection 中的所有向量条目。
+
+        Returns:
+            {documents_removed, chunks_removed}
+        """
+        try:
+            # 先获取所有文档信息以统计文档数
+            docs = self.list_documents()
+            doc_count = len(docs)
+            chunk_count = self._collection.count()
+
+            if chunk_count > 0:
+                all_ids = self._collection.get(include=[])["ids"]
+                self._collection.delete(ids=all_ids)
+
+            logger.info("已清空 Collection，共删除 %d 个文档 / %d 条向量", doc_count, chunk_count)
+            return {"documents_removed": doc_count, "chunks_removed": chunk_count}
+        except Exception:
+            logger.exception("清空 Collection 失败")
+            raise
+
     def list_documents(self) -> list[dict]:
         """列出 Collection 中所有不重复的文档信息。
 
