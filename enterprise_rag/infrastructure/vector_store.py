@@ -27,15 +27,13 @@ class VectorStoreService:
         persist_dir: str | None = None,
         collection_name: str = COLLECTION_NAME,
     ) -> None:
-        """初始化 ChromaDB 客户端并获取或创建 Collection。
-
-        Args:
-            persist_dir: 持久化目录路径。默认从 config.CHROMA_PERSIST_DIR 读取。
-            collection_name: Collection 名称。
-        """
+        """初始化 ChromaDB 客户端并获取或创建 Collection。"""
         directory = persist_dir or CHROMA_PERSIST_DIR
         os.makedirs(directory, exist_ok=True)
         logger.info("正在连接 ChromaDB，持久化目录: %s", directory)
+
+        self._collection_name = collection_name
+        self._persist_dir = directory
 
         try:
             self._client = chromadb.PersistentClient(
@@ -171,18 +169,22 @@ class VectorStoreService:
     def delete_all(self) -> dict:
         """删除 Collection 中的所有向量条目。
 
+        通过删除整个 Collection 再重建的方式，确保彻底清空，
+        不受 ChromaDB get() 默认返回数量限制的影响。
+
         Returns:
             {documents_removed, chunks_removed}
         """
         try:
-            # 先获取所有文档信息以统计文档数
-            docs = self.list_documents()
-            doc_count = len(docs)
+            doc_count = len(self.list_documents(max_results=100_000))
             chunk_count = self._collection.count()
 
             if chunk_count > 0:
-                all_ids = self._collection.get(include=[])["ids"]
-                self._collection.delete(ids=all_ids)
+                self._client.delete_collection(self._collection_name)
+                self._collection = self._client.get_or_create_collection(
+                    name=self._collection_name,
+                    metadata={"hnsw:space": "cosine"},
+                )
 
             logger.info("已清空 Collection，共删除 %d 个文档 / %d 条向量", doc_count, chunk_count)
             return {"documents_removed": doc_count, "chunks_removed": chunk_count}
@@ -190,14 +192,20 @@ class VectorStoreService:
             logger.exception("清空 Collection 失败")
             raise
 
-    def list_documents(self) -> list[dict]:
+    def list_documents(self, max_results: int = 100_000) -> list[dict]:
         """列出 Collection 中所有不重复的文档信息。
+
+        Args:
+            max_results: 最大返回的元数据条目数（防止 ChromaDB 默认限制导致漏报）。
 
         Returns:
             文档信息列表，每项包含: {doc_id, filename, chunk_count, uploaded_at, file_size}
         """
         try:
-            all_metas = self._collection.get(include=["metadatas"])
+            all_metas = self._collection.get(
+                include=["metadatas"],
+                limit=max_results,
+            )
         except Exception:
             logger.exception("获取文档列表失败")
             raise
