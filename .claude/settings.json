@@ -1,0 +1,45 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p \"d:/Claude code project/Enterprise RAG System/enterprise_rag/api/routes\" \"d:/Claude code project/Enterprise RAG System/enterprise_rag/services\" \"d:/Claude code project/Enterprise RAG System/enterprise_rag/infrastructure\")",
+      "Bash(pip install *)",
+      "Bash(python -m uvicorn main:app --host 0.0.0.0 --port 8000)",
+      "Bash(python -c ' *)",
+      "Bash(export HF_ENDPOINT=\"https://hf-mirror.com\")",
+      "Bash(timeout 60 python -c ' *)",
+      "Bash(pip show *)",
+      "Bash(timeout 120 python -c ' *)",
+      "Bash(python)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(python -m json.tool)",
+      "Bash(curl -s -X POST http://localhost:8000/upload -F \"file=@/tmp/test_doc.txt\")",
+      "Bash(echo '这是一份测试文档，用于验证企业知识库系统的文档上传和问答功能。公司的年假政策是员工入职满一年后可享受5天带薪年假。')",
+      "Bash(curl -s -X POST http://localhost:8000/upload -F \"file=@d:/temp_test_doc.txt\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d, indent=2, ensure_ascii=False\\)\\)\")",
+      "Bash(echo '这是一份测试文档，用于验证企业知识库系统的文档上传和问答功能。公司的年假政策是员工入职满一年后可享受5天带薪年假。加班需经部门主管审批。' > \"d:/temp_test_doc.txt\" && curl -s -X POST http://localhost:8000/upload -F \"file=@d:/temp_test_doc.txt\" | python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d, indent=2, ensure_ascii=False\\)\\)\" 2>&1)",
+      "Bash(curl -s -X POST http://localhost:8000/chat -H \"Content-Type: application/json\" -d '{\"question\":\"公司的年假政策是什么？\",\"top_k\":3}')",
+      "Bash(curl -s -X POST http://localhost:8000/chat -H \"Content-Type: application/json\" --data-raw \"{\\\\\"question\\\\\":\\\\\"公司的年假政策是什么？\\\\\",\\\\\"top_k\\\\\":3}\")",
+      "Bash(netstat -ano)",
+      "Bash(findstr \":8000\")",
+      "Bash(curl -v http://localhost:8000/health)",
+      "Bash(curl -v http://127.0.0.1:8000/health)",
+      "Bash(findstr \"LISTENING.*:8000\")",
+      "Bash(streamlit run *)",
+      "Bash(pip index *)",
+      "Bash(python -c \"from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES; print\\('YES'\\)\")",
+      "Bash(python -m uvicorn main:app --host 0.0.0.0 --port 8001)",
+      "Bash(pkill -f \"streamlit run\")",
+      "Bash(curl -s http://localhost:8001/health)",
+      "Bash(curl -s http://localhost:8001/documents)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'Docs: {d[\\\\\"total\\\\\"]}'\\)\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8501)",
+      "WebFetch(domain:localhost)",
+      "Bash(curl -s http://localhost:8501)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" http://localhost:8501)"
+    ],
+    "additionalDirectories": [
+      "d:\\Claude code project\\Enterprise RAG System\\enterprise_rag\\api",
+      "d:\\"
+    ]
+  }
+}
