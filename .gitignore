@@ -1,0 +1,30 @@
+# Environment secrets
+.env
+
+# ChromaDB persisted data
+chroma_db/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Model files
+models/
+models_ms/
+
+# Uploaded files
+uploads/
+
+# Claude local config
+.claude/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/

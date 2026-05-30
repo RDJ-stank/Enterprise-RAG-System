@@ -1,41 +1,33 @@
 import logging
-import tempfile
 from pathlib import Path
 
-from langchain_community.document_loaders import PyMuPDFLoader, TextLoader
+import fitz  # PyMuPDF
+from langchain_community.document_loaders import (
+    PDFPlumberLoader,
+    PyMuPDFLoader,
+    TextLoader,
+)
 from langchain_core.documents import Document
 
 logger = logging.getLogger(__name__)
 
 SUPPORTED_EXTENSIONS = {".pdf", ".txt"}
-LOADER_MAP = {
-    ".pdf": PyMuPDFLoader,
-    ".txt": TextLoader,
-}
 
 
 class DocumentLoaderService:
     """统一文档加载器。
 
-    根据文件扩展名自动路由到对应的 LangChain Loader，
-    支持 PDF 和 TXT 格式，返回 LangChain Document 列表。
+    PDF 采用三级回退策略：
+      1. PyMuPDFLoader — 最快，覆盖 90% 的 PDF
+      2. PDFPlumberLoader — 兼容更多内部格式
+      3. fitz 逐页容错 — 跳过损坏的页面，提取剩余内容
+
+    TXT 使用 TextLoader (UTF-8)。
     """
 
     @staticmethod
     def load(file_path: str | Path) -> list[Document]:
-        """加载文档，提取原始文本。
-
-        Args:
-            file_path: 待加载的文件路径。
-
-        Returns:
-            LangChain Document 对象列表。PDF 的每页为一个 Document，
-            TXT 整体为一个 Document。
-
-        Raises:
-            ValueError: 文件格式不支持或文件不存在。
-            RuntimeError: 文档解析失败。
-        """
+        """加载文档，提取原始文本。"""
         path = Path(file_path)
         if not path.exists():
             raise ValueError(f"文件不存在: {file_path}")
@@ -43,21 +35,16 @@ class DocumentLoaderService:
         ext = path.suffix.lower()
         if ext not in SUPPORTED_EXTENSIONS:
             raise ValueError(
-                f"不支持的文件格式 '{ext}'，仅支持: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
+                f"不支持的文件格式 '{ext}'，"
+                f"仅支持: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
             )
 
-        loader_cls = LOADER_MAP[ext]
         logger.info("加载文档: %s (格式=%s)", path.name, ext)
 
-        try:
-            if ext == ".txt":
-                loader = loader_cls(str(path), encoding="utf-8")
-            else:
-                loader = loader_cls(str(path))
-            docs = loader.load()
-        except Exception:
-            logger.exception("文档解析失败: %s", path.name)
-            raise RuntimeError(f"文档解析失败: {path.name}") from None
+        if ext == ".txt":
+            docs = _load_txt(str(path))
+        else:
+            docs = _load_pdf(str(path))
 
         # 过滤空页面
         docs = [d for d in docs if d.page_content and d.page_content.strip()]
@@ -78,3 +65,85 @@ class DocumentLoaderService:
             len(docs),
         )
         return docs
+
+
+# ── internal helpers ────────────────────────────────────────
+
+def _load_txt(file_path: str) -> list[Document]:
+    try:
+        loader = TextLoader(file_path, encoding="utf-8")
+        return loader.load()
+    except Exception:
+        logger.exception("TXT 解析失败: %s", file_path)
+        raise RuntimeError(f"TXT 文件解析失败: {file_path}") from None
+
+
+def _load_pdf(file_path: str) -> list[Document]:
+    """三级回退加载 PDF。"""
+
+    # 级别 1：PyMuPDFLoader（最快）
+    try:
+        loader = PyMuPDFLoader(file_path)
+        docs = loader.load()
+        logger.info("PDF 由 PyMuPDFLoader 成功加载")
+        return docs
+    except Exception:
+        logger.warning("PyMuPDFLoader 失败，切换到 PDFPlumberLoader ...")
+
+    # 级别 2：PDFPlumberLoader（兼容性更好）
+    try:
+        loader = PDFPlumberLoader(file_path)
+        docs = loader.load()
+        logger.info("PDF 由 PDFPlumberLoader 成功加载")
+        return docs
+    except Exception:
+        logger.warning("PDFPlumberLoader 也失败，切换到 fitz 逐页容错 ...")
+
+    # 级别 3：fitz 逐页提取，跳过损坏的页面
+    try:
+        docs = _load_pdf_page_by_page(file_path)
+        if docs:
+            logger.info("PDF 由 fitz 逐页容错成功加载 (%d 页)", len(docs))
+            return docs
+    except Exception:
+        pass
+
+    raise RuntimeError(
+        f"PDF 解析失败: {Path(file_path).name}。"
+        f"已尝试 PyMuPDF / PDFPlumber / fitz 三种方式均无法解析，"
+        f"该文件可能已损坏或为纯图片扫描件。"
+    )
+
+
+def _load_pdf_page_by_page(file_path: str) -> list[Document]:
+    """使用 fitz 逐页提取文本，出错页面跳过，不拖累其他页面。"""
+    docs: list[Document] = []
+    failed_pages: list[int] = []
+
+    try:
+        pdf = fitz.open(file_path)
+    except Exception:
+        raise RuntimeError(f"fitz 无法打开 PDF 文件: {file_path}")
+
+    for page_num in range(len(pdf)):
+        try:
+            page = pdf[page_num]
+            text = page.get_text()
+            if text.strip():
+                docs.append(Document(
+                    page_content=text,
+                    metadata={"page": page_num, "source": file_path},
+                ))
+        except Exception:
+            failed_pages.append(page_num + 1)  # 1-based for user
+
+    pdf.close()
+
+    if failed_pages:
+        logger.warning(
+            "fitz 逐页提取时 %d 页失败（页码: %s），已跳过",
+            len(failed_pages),
+            failed_pages,
+        )
+
+    return docs
