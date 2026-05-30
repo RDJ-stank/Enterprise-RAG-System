@@ -210,6 +210,7 @@ with st.sidebar:
                 result = delete_all_documents()
                 if result:
                     st.success(f"已删除 {result['documents_removed']} 个文档")
+                    st.session_state.messages = []
                     refresh_documents()
                     st.rerun()
                 else:
