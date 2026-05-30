@@ -170,98 +170,118 @@ def _load_docx(file_path: str) -> list[Document]:
 # ── DOC (旧格式) ────────────────────────────────────────────
 
 def _load_doc(file_path: str) -> list[Document]:
-    """解析旧版 .doc 文件（OLE 复合文档格式）。
+    """解析旧版 .doc 文件。
 
     策略：
       1. 先尝试作为 .docx 打开（很多 .doc 实际是新格式）
-      2. 用 olefile 提取 WordDocument 流中的文本
+      2. 用 olefile 读取 OLE 容器中的 WordDocument 主文字流
     """
     import olefile
 
-    # 级别 1：尝试作为 docx 打开
+    # 级别 1：尝试作为 docx 打开（覆盖大多数 .doc 文件）
     try:
         return _load_docx(file_path)
     except Exception:
         pass
 
-    # 级别 2：用 olefile 逐流提取
+    # 级别 2：OLE 复合文档 — 只读文字流
     try:
         if not olefile.isOleFile(file_path):
-            raise RuntimeError(f"不是有效的 OLE 复合文档: {file_path}")
+            raise RuntimeError("不是有效的 OLE 复合文档")
     except Exception as exc:
         raise RuntimeError(
             f"DOC 文件解析失败: {Path(file_path).name}。"
             f"文件不是有效的 DOC 或 DOCX 格式。"
         ) from exc
 
-    ole = None
     try:
         ole = olefile.OleFileIO(file_path)
-        # 列出所有包含文字的流
-        text_streams = []
-        # Word 文档的文本主要在 WordDocument 流和 1Table/0Table 中
-        # 但纯文本提取较复杂，这里用更简单的方式：
-        # 1. 尝试读取 SummaryInformation 中的标题/主题
-        # 2. 遍历所有流，过滤可打印字符
-        for stream_name in ole.listdir():
-            name = "/".join(stream_name)
-            try:
-                data = ole.openstream(stream_name).read()
-                # 尝试用 UTF-16LE 解码（Word 内部编码）
-                try:
-                    text = data.decode("utf-16-le", errors="ignore")
-                except Exception:
-                    text = data.decode("latin-1", errors="ignore")
+        text_parts: list[str] = []
 
-                # 只保留包含足够可打印字符的长文本流
-                printable = "".join(
-                    c for c in text if c.isprintable() or c in "\n\r\t"
-                )
-                if len(printable) > 100:
-                    text_streams.append((name, printable))
+        # 只读取已知包含文字的流（避免遍历全部二进制资源）
+        text_streams = [
+            "WordDocument",           # 正文
+            "1Table", "0Table",       # 辅助文字表
+        ]
+        for name in text_streams:
+            try:
+                if ole.exists(name):
+                    data = ole.openstream(name).read()
+                    # Word 文档内部编码通常是单字节 ASCII 扩展或 UTF-16LE
+                    text = _decode_word_binary(data)
+                    if text:
+                        text_parts.append(text)
             except Exception:
                 continue
 
-        if not text_streams:
-            # 降级：对所有流做原始提取
-            for stream_name in ole.listdir():
-                name = "/".join(stream_name)
-                try:
-                    data = ole.openstream(stream_name).read()
-                    text = data.decode("utf-16-le", errors="ignore")
-                    printable = "".join(
-                        c for c in text if c.isprintable() or c in "\n\r\t"
-                    )
-                    if len(printable) > 20:
-                        text_streams.append((name, printable))
-                except Exception:
-                    continue
+        # 如果主要流没提取到文字，尝试读 metadata
+        if not text_parts:
+            meta_text = _extract_ole_metadata(ole)
+            if meta_text:
+                text_parts.append(meta_text)
 
-        if not text_streams:
+        ole.close()
+
+        if not text_parts:
             raise RuntimeError("无法从 DOC 文件中提取任何文字。")
 
-        # 合并所有文字流
-        parts = []
-        for name, content in text_streams:
-            # 跳过明显是元数据的流
-            if any(kw in name.lower() for kw in ["summary", "props", "docprops"]):
-                continue
-            parts.append(content)
-
-        if not parts:
-            # 如果全部被过滤了，就用原始数据
-            parts = [c for _, c in text_streams]
-
-        full_text = "\n\n".join(parts)
+        full_text = "\n\n".join(text_parts)
         return [Document(page_content=full_text, metadata={"source": file_path})]
+
     except RuntimeError:
         raise
     except Exception:
         logger.exception("DOC 解析失败: %s", file_path)
         raise RuntimeError(f"DOC 文件解析失败: {Path(file_path).name}") from None
-    finally:
-        if ole:
-            ole.close()
+
+
+def _decode_word_binary(data: bytes, max_len: int = 1_000_000) -> str:
+    """从 Word OLE 二进制数据中提取可打印文字。
+
+    尝试 UTF-16LE 解码（Unicode Word），失败则用 Latin-1（ASCII 扩展）。
+    限制大小防止处理巨型嵌入图片/字体。
+    """
+    if len(data) > max_len:
+        data = data[:max_len]
+    # 尝试 Unicode 双字节编码
+    try:
+        text = data.decode("utf-16-le", errors="replace")
+    except Exception:
+        text = data.decode("latin-1", errors="replace")
+    # 过滤：只保留含连续可打印字符的片段
+    return _filter_printable(text, min_len=40)
+
+
+def _extract_ole_metadata(ole) -> str:
+    """从 OLE 元数据流提取标题/主题等文字。"""
+    parts = []
+    for prop in ["\x05SummaryInformation", "\x05DocumentSummaryInformation"]:
+        try:
+            if ole.exists(prop):
+                data = ole.openstream(prop).read()
+                text = data.decode("latin-1", errors="replace")
+                printable = "".join(c for c in text if c.isprintable() or c in "\n\r\t ")
+                if len(printable) > 20:
+                    parts.append(printable)
+        except Exception:
+            continue
+    return "\n".join(parts)
+
+
+def _filter_printable(text: str, min_len: int = 40) -> str:
+    """从文本中提取连续可打印字符片段，过滤二进制噪声。"""
+    result: list[str] = []
+    buf: list[str] = []
+    for c in text:
+        if c.isprintable() or c in "\n\r\t ":
+            buf.append(c)
+        else:
+            if len(buf) >= min_len:
+                result.append("".join(buf))
+            buf = []
+    if len(buf) >= min_len:
+        result.append("".join(buf))
+    return "\n".join(result)
 
 
 # ── CSV ────────────────────────────────────────────────────
