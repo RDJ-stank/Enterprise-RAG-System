@@ -16,7 +16,7 @@ from langchain_core.documents import Document
 logger = logging.getLogger(__name__)
 
 SUPPORTED_EXTENSIONS = {
-    ".pdf", ".txt", ".docx", ".csv", ".xlsx", ".xls",
+    ".pdf", ".txt", ".docx", ".csv", ".xlsx", ".xls", ".doc",
 }
 
 
@@ -27,6 +27,7 @@ class DocumentLoaderService:
       PDF  — 三级回退策略 (PyMuPDF → PDFPlumber → fitz 逐页)
       TXT  — TextLoader (UTF-8)
       DOCX — python-docx 直接提取段落文字
+      DOC  — 由 olefile 提取 OLE 复合文档中的文字流
       CSV  — Python csv 模块逐行读取
       XLSX — openpyxl 逐单元格提取
       XLS  — openpyxl (仅支持新版 .xls，旧版 97-2003 需 xlrd)
@@ -54,6 +55,8 @@ class DocumentLoaderService:
             docs = _load_txt(str(path))
         elif ext == ".docx":
             docs = _load_docx(str(path))
+        elif ext == ".doc":
+            docs = _load_doc(str(path))
         elif ext == ".csv":
             docs = _load_csv(str(path))
         elif ext in (".xlsx", ".xls"):
@@ -162,6 +165,103 @@ def _load_docx(file_path: str) -> list[Document]:
     except Exception:
         logger.exception("DOCX 解析失败: %s", file_path)
         raise RuntimeError(f"DOCX 文件解析失败: {Path(file_path).name}") from None
+
+
+# ── DOC (旧格式) ────────────────────────────────────────────
+
+def _load_doc(file_path: str) -> list[Document]:
+    """解析旧版 .doc 文件（OLE 复合文档格式）。
+
+    策略：
+      1. 先尝试作为 .docx 打开（很多 .doc 实际是新格式）
+      2. 用 olefile 提取 WordDocument 流中的文本
+    """
+    import olefile
+
+    # 级别 1：尝试作为 docx 打开
+    try:
+        return _load_docx(file_path)
+    except Exception:
+        pass
+
+    # 级别 2：用 olefile 逐流提取
+    try:
+        if not olefile.isOleFile(file_path):
+            raise RuntimeError(f"不是有效的 OLE 复合文档: {file_path}")
+    except Exception as exc:
+        raise RuntimeError(
+            f"DOC 文件解析失败: {Path(file_path).name}。"
+            f"文件不是有效的 DOC 或 DOCX 格式。"
+        ) from exc
+
+    ole = None
+    try:
+        ole = olefile.OleFileIO(file_path)
+        # 列出所有包含文字的流
+        text_streams = []
+        # Word 文档的文本主要在 WordDocument 流和 1Table/0Table 中
+        # 但纯文本提取较复杂，这里用更简单的方式：
+        # 1. 尝试读取 SummaryInformation 中的标题/主题
+        # 2. 遍历所有流，过滤可打印字符
+        for stream_name in ole.listdir():
+            name = "/".join(stream_name)
+            try:
+                data = ole.openstream(stream_name).read()
+                # 尝试用 UTF-16LE 解码（Word 内部编码）
+                try:
+                    text = data.decode("utf-16-le", errors="ignore")
+                except Exception:
+                    text = data.decode("latin-1", errors="ignore")
+
+                # 只保留包含足够可打印字符的长文本流
+                printable = "".join(
+                    c for c in text if c.isprintable() or c in "\n\r\t"
+                )
+                if len(printable) > 100:
+                    text_streams.append((name, printable))
+            except Exception:
+                continue
+
+        if not text_streams:
+            # 降级：对所有流做原始提取
+            for stream_name in ole.listdir():
+                name = "/".join(stream_name)
+                try:
+                    data = ole.openstream(stream_name).read()
+                    text = data.decode("utf-16-le", errors="ignore")
+                    printable = "".join(
+                        c for c in text if c.isprintable() or c in "\n\r\t"
+                    )
+                    if len(printable) > 20:
+                        text_streams.append((name, printable))
+                except Exception:
+                    continue
+
+        if not text_streams:
+            raise RuntimeError("无法从 DOC 文件中提取任何文字。")
+
+        # 合并所有文字流
+        parts = []
+        for name, content in text_streams:
+            # 跳过明显是元数据的流
+            if any(kw in name.lower() for kw in ["summary", "props", "docprops"]):
+                continue
+            parts.append(content)
+
+        if not parts:
+            # 如果全部被过滤了，就用原始数据
+            parts = [c for _, c in text_streams]
+
+        full_text = "\n\n".join(parts)
+        return [Document(page_content=full_text, metadata={"source": file_path})]
+    except RuntimeError:
+        raise
+    except Exception:
+        logger.exception("DOC 解析失败: %s", file_path)
+        raise RuntimeError(f"DOC 文件解析失败: {Path(file_path).name}") from None
+    finally:
+        if ole:
+            ole.close()
 
 
 # ── CSV ────────────────────────────────────────────────────

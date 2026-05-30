@@ -159,8 +159,8 @@ with st.sidebar:
 
     # 动态 key：每次成功上传后 key 变化，强制 Streamlit 创建全新 widget
     uploaded = st.file_uploader(
-        "拖拽文件到此处（PDF / TXT / DOCX / CSV / XLSX）",
-        type=["pdf", "txt", "docx", "csv", "xlsx", "xls"],
+        "拖拽文件到此处（PDF / TXT / DOCX / DOC / CSV / XLSX）",
+        type=["pdf", "txt", "docx", "doc", "csv", "xlsx", "xls"],
         accept_multiple_files=False,
         key=f"file_uploader_{st.session_state.upload_counter}",
         label_visibility="collapsed",
@@ -220,7 +220,7 @@ with st.sidebar:
 
     docs = st.session_state.documents
     if not docs:
-        st.caption("暂无文档，请上传 PDF 或 TXT")
+        st.caption("暂无文档，请上传文档（支持 PDF / DOCX / DOC / TXT / CSV / XLSX）")
     else:
         for doc in docs:
             with st.container():
@@ -270,7 +270,7 @@ st.markdown(
 if not st.session_state.messages:
     st.info(
         "👋 **欢迎使用企业知识库助手！**\n\n"
-        "1. 在左侧上传 PDF 或 TXT 文档\n"
+        "1. 在左侧上传文档（支持 PDF / DOCX / DOC / TXT / CSV / XLSX）\n"
         "2. 等待文档解析入库（状态栏显示 **● 后端服务运行中**）\n"
         "3. 在下方向知识库提问\n\n"
         "回答仅基于已入库文档生成，不会编造信息。"
@@ -303,7 +303,7 @@ if prompt := st.chat_input("输入你的问题，按 Enter 发送..."):
     if not ok:
         st.error("后端服务未连接，请先启动后端再提问")
     elif not docs:
-        st.warning("请先上传至少一份文档到知识库")
+        st.warning("请先上传至少一份文档到知识库（支持 PDF / DOCX / DOC / TXT / CSV / XLSX）")
     elif not has_any_indexed_doc():
         st.warning(
             "知识库中所有文档的块数均为 0，无法检索。\n\n"

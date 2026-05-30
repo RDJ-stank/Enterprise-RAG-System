@@ -15,3 +15,4 @@ python-multipart>=0.0.9,<1.0.0
 streamlit>=1.40.0,<2.0.0
 python-docx>=1.1.0,<2.0.0
 openpyxl>=3.1.0,<4.0.0
+olefile>=0.47,<1.0.0

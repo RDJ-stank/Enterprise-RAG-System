@@ -12,7 +12,7 @@ from config import MAX_UPLOAD_SIZE_MB
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-ALLOWED_EXTENSIONS = {".pdf", ".txt", ".docx", ".csv", ".xlsx", ".xls"}
+ALLOWED_EXTENSIONS = {".pdf", ".txt", ".docx", ".doc", ".csv", ".xlsx", ".xls"}
 MAX_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
 
