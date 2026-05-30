@@ -125,6 +125,23 @@ def has_any_indexed_doc() -> bool:
     return any(d.get("chunk_count", 0) > 0 for d in st.session_state.documents)
 
 
+def _cb_delete_all() -> None:
+    """删除全部文档的按钮回调。
+
+    使用 on_click 回调而非 st.button 返回值判断，避免 rerun 双触发。
+    """
+    if not st.session_state.get("documents"):
+        return
+    if not st.session_state.get("backend_ok"):
+        return
+    result = delete_all_documents()
+    if result:
+        st.session_state.messages = []
+        refresh_documents()
+    else:
+        st.session_state["_delete_error"] = True
+
+
 # ── SIDEBAR ─────────────────────────────────────────────────
 with st.sidebar:
     st.markdown(
@@ -198,23 +215,12 @@ with st.sidebar:
     st.divider()
 
     # ── Document list ────────────────────────────────────
-    col1, col2, col3 = st.columns([3, 1, 1])
+    col1, col2 = st.columns([4, 1])
     with col1:
         st.subheader("📚 已入库文档")
     with col2:
         if st.button("🔄", help="刷新文档列表", use_container_width=True):
             refresh_documents()
-    with col3:
-        if st.button("🗑️🗑️", help="一键删除所有文档", use_container_width=True):
-            if docs and st.session_state.backend_ok:
-                result = delete_all_documents()
-                if result:
-                    st.success(f"已删除 {result['documents_removed']} 个文档")
-                    st.session_state.messages = []
-                    refresh_documents()
-                    st.rerun()
-                else:
-                    st.error("清空失败，请查看后端日志")
 
     if ok:
         refresh_documents()
@@ -256,9 +262,24 @@ with st.sidebar:
     # ── Settings ─────────────────────────────────────────
     st.subheader("⚙️ 设置")
     top_k = st.slider("检索片段数 (top_k)", min_value=1, max_value=10, value=4)
-    if st.button("🧹 清空对话", use_container_width=True):
-        st.session_state.messages = []
-        st.rerun()
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("🧹 清空对话", use_container_width=True):
+            st.session_state.messages = []
+            st.rerun()
+    with c2:
+        st.button(
+            "🗑️ 全部文档",
+            help="一键删除所有已入库文档",
+            use_container_width=True,
+            key="btn_delete_all",
+            on_click=_cb_delete_all,
+        )
+
+    # 显示删除错误（如有）
+    if st.session_state.pop("_delete_error", False):
+        st.error("清空失败，请查看后端日志")
 
 # ── MAIN CHAT AREA ───────────────────────────────────────────
 st.markdown('<div class="main-header">💬 知识库问答</div>', unsafe_allow_html=True)
